@@ -1,5 +1,17 @@
 # https://github.com/github/gitignore/blob/master/C.gitignore
 
+#settings
+.settings/
+
+#metadata
+*.metadata/
+
+#Debug
+Debug/
+debug/
+Release/
+release
+
 # Prerequisites
 *.d
 
@@ -37,6 +49,7 @@
 *.i*86
 *.x86_64
 *.hex
+*.bin
 
 # Debug files
 *.dSYM/
