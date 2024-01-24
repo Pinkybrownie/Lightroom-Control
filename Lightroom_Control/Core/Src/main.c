@@ -45,25 +45,26 @@ DMA_HandleTypeDef hdma_adc1;
 
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
-TIM_HandleTypeDef htim4;
 TIM_HandleTypeDef htim10;
 
 /* USER CODE BEGIN PV */
-#define Tiempo_antirrebotes 300
-uint32_t tiempo;
-int boton_1=0, boton_2=0;
-int interruptorDMA=0;
-
-uint32_t ADC_val; //valor luz captada por el LDR con dma de 32
-uint32_t umbral = 150; //umbral de luz medicion ldr
+#define debouncer 300
+#define MEDIDAS 5
+int boton=0;
+int botonBanyo=0;
+int interruptorMANUAL=0; //lo usaremos para modificar manualmente los sensores
 int val_LDR=0; //sensor luz, el led se enciende cuando haya poca luz
+int presencia=0;
+uint32_t time;
+uint32_t ADC_val; //valor de luz captada por el LDR con dma de 32b
+uint32_t umbral=70; //umbral de luz medicion ldr
+uint32_t umbral_dist=250; // distancia minima a la cual se detecta presencia
 
-#define umbral_dist 100
-#define REPETICIONES 5
+//uint32_t Is_First_Captured=0;
 uint32_t IC_Risevalue=0, IC_Fallvalue=0; //valores del contador en cada flanco
 uint32_t num=0; //saber numero nums sensor
-uint32_t distancia[REPETICIONES];
-int presencia=0;
+uint32_t distancia[MEDIDAS];
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -72,7 +73,6 @@ static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_TIM3_Init(void);
-static void MX_TIM4_Init(void);
 static void MX_TIM10_Init(void);
 static void MX_ADC1_Init(void);
 /* USER CODE BEGIN PFP */
@@ -81,23 +81,29 @@ static void MX_ADC1_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
-	if(HAL_GetTick()-tiempo>Tiempo_antirrebotes){
+	if(HAL_GetTick()-time>debouncer){
 		if(GPIO_Pin==GPIO_PIN_0){
-			if(interruptorDMA==0)
-				interruptorDMA=1;
+			if(interruptorMANUAL==0)
+				interruptorMANUAL=1;
 			else
-				interruptorDMA=0;
+				interruptorMANUAL=0;
 		}
 		if(GPIO_Pin==GPIO_PIN_5){
-			if(boton_1==0)
-				boton_1=1;
+			if(boton==0)
+				boton=1;
 			else
-				boton_1=0;
+				boton=0;
 		}
-		tiempo=HAL_GetTick();
+		if(GPIO_Pin==GPIO_PIN_4){
+			botonBanyo=1;
+		}
+		time=HAL_GetTick();
 	}
 }
+
+
 /* USER CODE END 0 */
 
 /**
@@ -131,54 +137,62 @@ int main(void)
   MX_DMA_Init();
   MX_TIM2_Init();
   MX_TIM3_Init();
-  MX_TIM4_Init();
   MX_TIM10_Init();
   MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
   HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_4);
   HAL_TIM_IC_Start_IT(&htim3, TIM_CHANNEL_1);
   __HAL_TIM_SET_COMPARE(&htim4,TIM_CHANNEL_4,10);
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  if (HAL_GPIO_ReadPin(GPIOE,GPIO_PIN_4) && htim2.State!= HAL_TIM_STATE_BUSY) {//Si se pulsa el botón
-		  //if(htim2.State!= HAL_TIM_STATE_BUSY){//Para evitar volver a activar el timer
-		  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_SET);//se enciende el led
-		  HAL_TIM_Base_Start_IT(&htim2);//comienza el contador
-	  }
-	  if (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_3)== GPIO_PIN_RESET){//Cuando se ha apagado el led
-		  HAL_TIM_Base_Stop_IT(&htim2);//elimina el contador
-	  }
-	  if(boton_1==1)
-	  		  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_SET);
-	  	  else
-	  		  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_RESET);
-	  	  if(interruptorDMA==1){
-	  	  		  HAL_ADC_Stop_DMA(&hadc1);
-	  	  		  HAL_TIM_IC_Stop(&htim3, TIM_CHANNEL_1);
-	  	  		  HAL_TIM_PWM_Stop(&htim3, TIM_CHANNEL_3);
-	  	  }
-	  	  else{
-	  		  HAL_ADC_Start_DMA(&hadc1, &ADC_val, 1);
-	  		  HAL_TIM_IC_Start_IT(&htim3, TIM_CHANNEL_1);
-	  		  HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_4);
-	  		  if(val_LDR==1){
-	  		  	  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_2, GPIO_PIN_SET);
-	  		  }else{
-	  		  	  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_2, GPIO_PIN_RESET);
-	  		  }
-	  		  if(presencia==1){
-	  		  	  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_6, GPIO_PIN_SET);
-	  		  }else{
-	  		      HAL_GPIO_WritePin(GPIOE, GPIO_PIN_6, GPIO_PIN_RESET);
-	  		  }
-	  	  }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+	  if(boton==1){
+		  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_6, GPIO_PIN_SET);
+	  }
+	  else{
+		  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_6, GPIO_PIN_RESET);
+	  }
+	  if(botonBanyo==1 && htmi2.State!=HAL_TIM_STATE_BUSY){
+		  //htmi2.State!=HAL_TIM_STATE_BUSY para evitar volver a activar el timer
+		  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_10, GPIO_PIN_SET);
+		  HAL_TIM_Base_Start_IT(&htim2);
+		  botonBanyo=0;
+	  }
+	  if(interruptorMANUAL==1){
+	  	HAL_ADC_Stop_DMA(&hadc1);
+	  	HAL_TIM_IC_Stop(&htim3, TIM_CHANNEL_1);
+	  	HAL_TIM_PWM_Stop(&htim4, TIM_CHANNEL_4);
+		HAL_GPIO_WritePin(GPIOE, GPIO_PIN_6, GPIO_PIN_SET);
+		HAL_GPIO_WritePin(GPIOE, GPIO_PIN_2, GPIO_PIN_SET);
+		HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_SET);
+		HAL_GPIO_WritePin(GPIOE, GPIO_PIN_10, GPIO_PIN_SET);
+	  }
+	  else{
+		  HAL_ADC_Start_DMA(&hadc1, &ADC_val, 1);
+		  HAL_TIM_IC_Start_IT(&htim3, TIM_CHANNEL_1);
+		  HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_4);
+		  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_6, GPIO_PIN_RESET);
+		  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_2, GPIO_PIN_RESET);
+		  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_RESET);
+		  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_10, GPIO_PIN_RESET);
+		  if(val_LDR==1){
+		  	  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_2, GPIO_PIN_SET);
+		  }else{
+		  	  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_2, GPIO_PIN_RESET);
+		  }
+		  if(presencia==1){
+		  	  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_SET);
+		  }else{
+		      HAL_GPIO_WritePin(GPIOE, GPIO_PIN_3, GPIO_PIN_RESET);
+		  }
+	  }
   }
   /* USER CODE END 3 */
 }
@@ -385,55 +399,6 @@ static void MX_TIM3_Init(void)
 }
 
 /**
-  * @brief TIM4 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_TIM4_Init(void)
-{
-
-  /* USER CODE BEGIN TIM4_Init 0 */
-
-  /* USER CODE END TIM4_Init 0 */
-
-  TIM_MasterConfigTypeDef sMasterConfig = {0};
-  TIM_OC_InitTypeDef sConfigOC = {0};
-
-  /* USER CODE BEGIN TIM4_Init 1 */
-
-  /* USER CODE END TIM4_Init 1 */
-  htim4.Instance = TIM4;
-  htim4.Init.Prescaler = 99;
-  htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim4.Init.Period = 499;
-  htim4.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim4.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_PWM_Init(&htim4) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
-  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim4, &sMasterConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 0;
-  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
-  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
-  if (HAL_TIM_PWM_ConfigChannel(&htim4, &sConfigOC, TIM_CHANNEL_4) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN TIM4_Init 2 */
-
-  /* USER CODE END TIM4_Init 2 */
-  HAL_TIM_MspPostInit(&htim4);
-
-}
-
-/**
   * @brief TIM10 Initialization Function
   * @param None
   * @retval None
@@ -494,29 +459,16 @@ static void MX_GPIO_Init(void)
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOE_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
-  __HAL_RCC_GPIOD_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_2|GPIO_PIN_3|GPIO_PIN_6, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOE, GPIO_PIN_2|GPIO_PIN_3|GPIO_PIN_6|GPIO_PIN_10, GPIO_PIN_RESET);
 
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12|GPIO_PIN_13, GPIO_PIN_RESET);
-
-  /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_RESET);
-
-  /*Configure GPIO pins : PE2 PE3 PE6 */
-  GPIO_InitStruct.Pin = GPIO_PIN_2|GPIO_PIN_3|GPIO_PIN_6;
+  /*Configure GPIO pins : PE2 PE3 PE6 PE10 */
+  GPIO_InitStruct.Pin = GPIO_PIN_2|GPIO_PIN_3|GPIO_PIN_6|GPIO_PIN_10;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : PE4 */
-  GPIO_InitStruct.Pin = GPIO_PIN_4;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
 
   /*Configure GPIO pin : PE5 */
@@ -531,19 +483,11 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : PD12 PD13 */
-  GPIO_InitStruct.Pin = GPIO_PIN_12|GPIO_PIN_13;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  /*Configure GPIO pin : PA4 */
+  GPIO_InitStruct.Pin = GPIO_PIN_4;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : PB3 */
-  GPIO_InitStruct.Pin = GPIO_PIN_3;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI0_IRQn, 0, 0);
@@ -560,97 +504,65 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-//Funcion llamada cada vez que hay overflow
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
-	if(htim==&htim2){
-		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, 0);
-		HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_13);//LED indicador del timer
-	}
-	if(htim->Instance == TIM10){
-		presencia = 0;
-		HAL_TIM_Base_Stop_IT (&htim10);
-	}
-}
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef * hadc){
 	if(hadc->Instance == ADC1){
 		ADC_val = HAL_ADC_GetValue(&hadc1);
-		if(ADC_val < umbral)
-			val_LDR=1; //se enciende el LED si hay poca luz
+		if(ADC_val < umbral) // Comparamos la luz ambiente captada por el LDR con el umbral definido
+			val_LDR=1; //Si es menor entonces encendemos el LED
 		else
-			val_LDR=0; //no se enciende el LED si hayluz
+			val_LDR=0; //Si es suficiente se mantiene apagado
 	}
 }
-void HAL_TIM_IC_CapturedCallback(TIM_HandleTypeDef *htim){
-	if(htim->Instance==TIM3){
-			int media, i;
-			if(IC_Risevalue==0){ //si todavia no se ha producido flanco de subida
-						IC_Risevalue=HAL_TIM_ReadCapturedValue(&htim3, TIM_CHANNEL_1);
-						//Cambiamos la sensibilidad de la interrupción al flanco de bajada
-						__HAL_TIM_SET_CAPTUREPOLARITY(&htim3, TIM_CHANNEL_1, TIM_INPUTCHANNELPOLARITY_FALLING);
-			}
-			else if(IC_Risevalue!=0){
-						IC_Fallvalue=HAL_TIM_ReadCapturedValue(&htim3,TIM_CHANNEL_1);
-						__HAL_TIM_SET_COUNTER(htim,0);
-						if(IC_Fallvalue>IC_Risevalue){
-										if(num<REPETICIONES){
-											distancia[num]=IC_Fallvalue-IC_Risevalue;
-											num++;
-										}else{
-											for(i=0;i<num-1;i++){
-												distancia[i]=distancia[i+1];
-											}
-											distancia[num-1]=IC_Fallvalue-IC_Risevalue;
-											for(i=0;i<REPETICIONES;i++){
-												media+=distancia[i];
-											}
-											if(media/REPETICIONES<umbral_dist){
-												presencia=1;
-												HAL_TIM_Base_Start_IT(&htim10); //iniciamos el temporizador de 5 segundos
-											}
-										}
-									}
-									IC_Risevalue=0;
-									//Cambiamos la sensibilidad de la interrupción al flanco de subida
-									__HAL_TIM_SET_CAPTUREPOLARITY(&htim3, TIM_CHANNEL_1, TIM_INPUTCHANNELPOLARITY_RISING);
-			}
-	}
-}
+
 void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim){
 	if(htim->Instance == TIM3){
-		int media, i;
-		if (IC_Risevalue == 0){ // si todavia no se ha producido el flanco de subida
+		int media,suma;
+		if (IC_Risevalue == 0){ // if the first value is not captured
 			IC_Risevalue=HAL_TIM_ReadCapturedValue(&htim3, TIM_CHANNEL_1);
-			// Cambiamos la senisibilidad de la interrupción al flanco de bajada
+			// Now change the polarity to falling edge
 			__HAL_TIM_SET_CAPTUREPOLARITY(&htim3, TIM_CHANNEL_1, TIM_INPUTCHANNELPOLARITY_FALLING);
 		}
-		else if (IC_Risevalue != 0){ // si ya se ha producido el flanco de subida
+		else if (IC_Risevalue != 0){
 			IC_Fallvalue = HAL_TIM_ReadCapturedValue(&htim3, TIM_CHANNEL_1);
 			__HAL_TIM_SET_COUNTER(htim, 0);
 			if(IC_Fallvalue > IC_Risevalue){
-				if(num < REPETICIONES){
+				if(num < MEDIDAS){
 					distancia[num] = IC_Fallvalue - IC_Risevalue;
 					num++;
 				}
 				else{
-					for(i = 0; i < num - 1; i++){
+					for(int i = 0; i < num - 1; i++){
 						distancia[i] = distancia[i+1];
 					}
 					distancia[num-1] = IC_Fallvalue - IC_Risevalue;
-					for(i = 0; i < REPETICIONES; i++){
-						media += distancia[i];
+					for(int i = 0; i < MEDIDAS; i++){
+						suma += distancia[i];
 					}
-					if(media/REPETICIONES < umbral_dist){
+					media=suma/MEDIDAS;
+					if(media < umbral_dist){
 						presencia = 1;
-						HAL_TIM_Base_Start_IT(&htim10); // iniciamos el temporizador de 5 segundos
+						HAL_TIM_Base_Start_IT(&htim10); // iniciamos el timer
 					}
 				}
 			}
 			IC_Risevalue = 0;
-			// Cambiamos la sensibilidad de la interrupción al flanco de subida
+			// set polarity to rising edge
 			__HAL_TIM_SET_CAPTUREPOLARITY(&htim3, TIM_CHANNEL_1, TIM_INPUTCHANNELPOLARITY_RISING);
 			}
 		}
 	}
+void HAL_TIM_PeriodElapsedCallback (TIM_HandleTypeDef *htim){
+	if(htim==&htim2){
+		HAL_GPIO_WritePin(GPIOE, GPIO_PIN_10, GPIO_PIN_RESET);
+		botonBanyo = 0;
+		HAL_TIM_Base_Stop_IT(&htim2);
+	}
+	if(htim->Instance == TIM10){
+		presencia = 0;
+		HAL_TIM_Base_Stop_IT(&htim10);
+	}
+}
+
 /* USER CODE END 4 */
 
 /**
